@@ -1,0 +1,266 @@
+version: 2
+
+sources:
+  - name: ecommerce
+    description: >
+      Operational OLTP data for ShopSphere, an online retailer selling physical goods.
+      Nightly batch load from PostgreSQL. Supports browse → cart → order → payment →
+      fulfillment reporting. Revenue KPIs exclude cancelled and fully refunded orders;
+      currency is USD.
+    database: shopsphere
+    schema: ecommerce
+
+    tables:
+      - name: categories
+        description: >
+          Product category lookup. One row per merchandising category used to group
+          the product catalog for category-level revenue analysis (BQ3).
+        columns:
+          - name: category_id
+            description: Surrogate primary key for the category dimension.
+            data_tests:
+              - unique
+              - not_null
+          - name: category_name
+            description: Human-readable category label shown in the storefront and reports.
+
+      - name: customers
+        description: >
+          Registered shopper profiles. One row per customer who can place orders;
+          drives customer lifetime spend and segmentation analysis (BQ2).
+        columns:
+          - name: customer_id
+            description: Surrogate primary key for the customer dimension.
+            data_tests:
+              - unique
+              - not_null
+          - name: first_name
+            description: Customer given name (PII).
+          - name: last_name
+            description: Customer family name (PII).
+          - name: email
+            description: Primary contact email address (PII); unique per customer in source.
+          - name: country
+            description: Country of the customer's registered address.
+          - name: city
+            description: City of the customer's registered address.
+          - name: signup_date
+            description: Calendar date the customer account was created (acquisition date).
+          - name: customer_segment
+            description: >
+              Marketing segment assigned to the customer (Retail or VIP).
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['Retail', 'VIP']
+
+      - name: marketing_channels
+        description: >
+          Acquisition and marketing channel lookup. One row per channel attributed
+          to orders for channel performance analysis.
+        columns:
+          - name: channel_id
+            description: Surrogate primary key for the marketing channel dimension.
+            data_tests:
+              - unique
+              - not_null
+          - name: channel_name
+            description: Display name of the marketing or acquisition channel.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values:
+                      - 'Google Ads'
+                      - 'Facebook'
+                      - 'Instagram'
+                      - 'Email'
+                      - 'Organic'
+                      - 'Affiliate'
+
+      - name: products
+        description: >
+          Product catalog (SKU master). One row per sellable product; links to
+          categories and is referenced by order line items.
+        columns:
+          - name: product_id
+            description: Surrogate primary key for the product dimension.
+            data_tests:
+              - unique
+              - not_null
+          - name: sku
+            description: Stock-keeping unit code identifying the product in inventory.
+          - name: product_name
+            description: Descriptive product name shown to customers.
+          - name: category_id
+            description: Foreign key to categories; merchandising hierarchy for the product.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'categories')
+                    field: category_id
+          - name: unit_price
+            description: Current list/catalog unit price in USD.
+          - name: active_flag
+            description: Whether the product is currently available for sale.
+
+      - name: orders
+        description: >
+          Order header fact table. One row per customer order with order-level
+          revenue amounts. Governed order revenue uses gross_amount (matches payment
+          1:1); exclude Cancelled and Refunded statuses from revenue KPIs (BQ1, BQ2).
+        columns:
+          - name: order_id
+            description: Surrogate primary key for the order.
+            data_tests:
+              - unique
+              - not_null
+          - name: customer_id
+            description: Foreign key to the customer who placed the order.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'customers')
+                    field: customer_id
+          - name: order_date
+            description: Timestamp when the order was placed; used for monthly rollups.
+          - name: order_status
+            description: >
+              Lifecycle status of the order. Completed orders may have partial refunds;
+              Cancelled and Refunded orders are excluded from revenue KPIs.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['Completed', 'Cancelled', 'Refunded']
+          - name: channel_id
+            description: Foreign key to the marketing channel attributed to the order.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'marketing_channels')
+                    field: channel_id
+          - name: gross_amount
+            description: >
+              Order-level revenue in USD before refunds; reconciles 1:1 with payments.amount.
+              Use this for order-level net revenue, not SUM(order_items.line_amount).
+          - name: discount_amount
+            description: Order-level discount applied in USD.
+          - name: tax_amount
+            description: Tax component charged on the order in USD.
+          - name: shipping_amount
+            description: Shipping fees charged on the order in USD.
+
+      - name: order_items
+        description: >
+          Order line-item fact table. One row per product line on an order; use
+          line_amount for category/product revenue at line grain with order eligibility
+          filters applied upstream (BQ3).
+        columns:
+          - name: order_item_id
+            description: Surrogate primary key for the order line item.
+            data_tests:
+              - unique
+              - not_null
+          - name: order_id
+            description: Foreign key to the parent order header.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'orders')
+                    field: order_id
+          - name: product_id
+            description: Foreign key to the product sold on this line.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'products')
+                    field: product_id
+          - name: quantity
+            description: Number of units ordered on this line.
+          - name: unit_price
+            description: Unit selling price at time of sale in USD.
+          - name: line_amount
+            description: Extended line revenue (quantity × unit_price) in USD.
+
+      - name: payments
+        description: >
+          Payment capture events. One row per order (1:1 with orders); amount matches
+          orders.gross_amount. Staged for future payment-method analysis; not in v1 marts.
+        columns:
+          - name: payment_id
+            description: Surrogate primary key for the payment event.
+            data_tests:
+              - unique
+              - not_null
+          - name: order_id
+            description: Foreign key to the order being paid; one payment per order.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'orders')
+                    field: order_id
+          - name: payment_date
+            description: Timestamp when the payment was captured or attempted.
+          - name: payment_method
+            description: Payment instrument used for the transaction.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values:
+                      - 'Credit Card'
+                      - 'Debit Card'
+                      - 'PayPal'
+                      - 'Apple Pay'
+                      - 'Google Pay'
+          - name: payment_status
+            description: >
+              Outcome of the payment attempt (Captured, Voided, Failed, or Refunded).
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values: ['Captured', 'Voided', 'Failed', 'Refunded']
+          - name: amount
+            description: Payment amount in USD; equals orders.gross_amount for captured payments.
+
+      - name: refunds
+        description: >
+          Refund transactions. One row per refund event on an order (0 or 1 per order).
+          Partial refunds on Completed orders reduce net revenue; fully Refunded orders
+          are excluded from revenue KPIs.
+        columns:
+          - name: refund_id
+            description: Surrogate primary key for the refund event.
+            data_tests:
+              - unique
+              - not_null
+          - name: order_id
+            description: Foreign key to the order receiving the refund.
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ecommerce', 'orders')
+                    field: order_id
+          - name: refund_date
+            description: Timestamp when the refund was processed.
+          - name: refund_amount
+            description: Refund value in USD applied to the order.
+          - name: refund_reason
+            description: >
+              Business reason for the refund; partial returns on Completed orders use
+              "Partial refund - item return"; full refunds use standard return reasons.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                    values:
+                      - 'Changed mind'
+                      - 'Customer return'
+                      - 'Defective product'
+                      - 'Duplicate charge'
+                      - 'Late delivery'
+                      - 'Partial refund - item return'
