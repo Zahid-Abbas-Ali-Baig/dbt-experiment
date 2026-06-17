@@ -1,0 +1,259 @@
+version: 2
+
+models:
+  - name: stg_ecommerce__categories
+    description: >
+      Staged product category lookup from ShopSphere operational data. One row per
+      merchandising category; supports category-level revenue rollups (BQ3).
+    columns:
+      - name: category_id
+        description: Surrogate primary key for the product category dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: category_name
+        description: Human-readable category label used in the storefront and reports.
+
+  - name: stg_ecommerce__customers
+    description: >
+      Staged registered shopper profiles from ShopSphere. One row per customer with
+      PII attributes preserved; feeds customer lifetime spend analysis (BQ2).
+    columns:
+      - name: customer_id
+        description: Surrogate primary key for the customer dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: first_name
+        description: Customer given name (PII).
+      - name: last_name
+        description: Customer family name (PII).
+      - name: email
+        description: Primary contact email address (PII); unique per customer in source.
+      - name: country
+        description: Country of the customer's registered address.
+      - name: city
+        description: City of the customer's registered address.
+      - name: customer_signup_date
+        description: Calendar date the customer account was created (acquisition date).
+      - name: customer_segment
+        description: Marketing segment assigned to the customer.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Retail', 'VIP']
+
+  - name: stg_ecommerce__marketing_channels
+    description: >
+      Staged acquisition and marketing channel lookup. One row per channel attributed
+      to orders for channel performance analysis.
+    columns:
+      - name: channel_id
+        description: Surrogate primary key for the marketing channel dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: marketing_channel_name
+        description: Display name of the marketing or acquisition channel.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'Google Ads'
+                  - 'Facebook'
+                  - 'Instagram'
+                  - 'Email'
+                  - 'Organic'
+                  - 'Affiliate'
+
+  - name: stg_ecommerce__products
+    description: >
+      Staged product catalog (SKU master). One row per sellable product with category
+      foreign key; referenced by order line items for product and category revenue (BQ3).
+    columns:
+      - name: product_id
+        description: Surrogate primary key for the product dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: sku
+        description: Stock-keeping unit code identifying the product in inventory.
+      - name: product_name
+        description: Descriptive product name shown to customers.
+      - name: category_id
+        description: Foreign key to the product's merchandising category.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__categories')
+                field: category_id
+      - name: unit_price
+        description: Current list/catalog unit price in USD.
+      - name: is_product_active
+        description: Whether the product is currently available for sale.
+
+  - name: stg_ecommerce__orders
+    description: >
+      Staged order header fact. One row per customer order with standardized revenue
+      columns and a revenue-eligibility flag. Governed order revenue uses
+      gross_revenue_amount (matches payment 1:1); Cancelled and Refunded orders are
+      excluded from revenue KPIs (BQ1, BQ2).
+    columns:
+      - name: order_id
+        description: Surrogate primary key for the order.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to the customer who placed the order.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__customers')
+                field: customer_id
+      - name: ordered_at
+        description: Timestamp when the order was placed; used for monthly rollups.
+      - name: order_status
+        description: >
+          Canonical lifecycle status of the order. Completed orders may have partial
+          refunds; Cancelled and Refunded orders are excluded from revenue KPIs.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Completed', 'Cancelled', 'Refunded']
+      - name: channel_id
+        description: Foreign key to the marketing channel attributed to the order.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__marketing_channels')
+                field: channel_id
+      - name: gross_revenue_amount
+        description: >
+          Order-level gross revenue in USD before refunds; reconciles 1:1 with payment
+          amount. Use for order-level net revenue, not SUM of line items.
+      - name: discount_amount
+        description: Order-level discount applied in USD.
+      - name: tax_amount
+        description: Tax component charged on the order in USD.
+      - name: shipping_amount
+        description: Shipping fees charged on the order in USD.
+      - name: is_revenue_eligible
+        description: >
+          True when order_status is not Cancelled or Refunded; gates inclusion in
+          revenue KPIs per business constraints.
+
+  - name: stg_ecommerce__order_items
+    description: >
+      Staged order line-item fact. One row per product line on an order with
+      standardized line revenue; use line_revenue_amount for category/product analysis
+      at line grain with order eligibility applied upstream (BQ3).
+    columns:
+      - name: order_item_id
+        description: Surrogate primary key for the order line item.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Foreign key to the parent order header.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__orders')
+                field: order_id
+      - name: product_id
+        description: Foreign key to the product sold on this line.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__products')
+                field: product_id
+      - name: quantity
+        description: Number of units ordered on this line.
+      - name: unit_price
+        description: Unit selling price at time of sale in USD.
+      - name: line_revenue_amount
+        description: Extended line revenue (quantity × unit_price) in USD.
+
+  - name: stg_ecommerce__payments
+    description: >
+      Staged payment capture events. One row per order (1:1 with orders); payment_amount
+      matches order gross revenue. Staged for future payment-method analysis; not in v1 marts.
+    columns:
+      - name: payment_id
+        description: Surrogate primary key for the payment event.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Foreign key to the order being paid; one payment per order.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__orders')
+                field: order_id
+      - name: paid_at
+        description: Timestamp when the payment was captured or attempted.
+      - name: payment_method
+        description: Payment instrument used for the transaction.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'Credit Card'
+                  - 'Debit Card'
+                  - 'PayPal'
+                  - 'Apple Pay'
+                  - 'Google Pay'
+      - name: payment_status
+        description: Outcome of the payment attempt.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Captured', 'Voided', 'Failed', 'Refunded']
+      - name: payment_amount
+        description: Payment amount in USD; equals order gross_revenue_amount for captured payments.
+
+  - name: stg_ecommerce__refunds
+    description: >
+      Staged refund transactions. One row per refund event on an order (0 or 1 per order).
+      Partial refunds on Completed orders reduce net revenue; fully Refunded orders are
+      excluded from revenue KPIs.
+    columns:
+      - name: refund_id
+        description: Surrogate primary key for the refund event.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Foreign key to the order receiving the refund.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__orders')
+                field: order_id
+      - name: refunded_at
+        description: Timestamp when the refund was processed.
+      - name: refund_amount
+        description: Refund value in USD applied to the order.
+      - name: refund_reason
+        description: >
+          Business reason for the refund; partial returns on Completed orders use
+          "Partial refund - item return"; full refunds use standard return reasons.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'Changed mind'
+                  - 'Customer return'
+                  - 'Defective product'
+                  - 'Duplicate charge'
+                  - 'Late delivery'
+                  - 'Partial refund - item return'
