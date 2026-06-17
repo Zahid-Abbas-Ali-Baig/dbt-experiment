@@ -1,0 +1,138 @@
+version: 2
+
+models:
+  - name: int_refunds__aggregated_by_order
+    description: >
+      Rolls up refund events to order grain. Exposes total_refund_amount per order
+      for net revenue calculation in int_orders__with_refunds. Source has at most
+      one refund row per order; aggregation is defensive for future multi-refund cases.
+    columns:
+      - name: order_id
+        description: Foreign key to the refunded order; one row per order with a refund.
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__orders')
+                field: order_id
+      - name: total_refund_amount
+        description: Sum of refund_amount for the order in USD.
+      - name: refunded_at
+        description: Latest refund timestamp when multiple refunds exist on one order.
+      - name: refund_reason
+        description: Refund reason from the source refund event.
+
+  - name: int_orders__with_refunds
+    description: >
+      Order header enriched with aggregated refund totals and governed net revenue.
+      Reconciles gross_revenue_amount with refunds per design brief: net_order_revenue
+      equals gross minus refunds for revenue-eligible orders (Completed with optional
+      partial refund); Cancelled and fully Refunded orders contribute zero net revenue.
+    columns:
+      - name: order_id
+        description: Surrogate primary key for the order.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to the customer who placed the order.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_ecommerce__customers')
+                field: customer_id
+      - name: ordered_at
+        description: Timestamp when the order was placed.
+      - name: order_status
+        description: Canonical order lifecycle status.
+      - name: channel_id
+        description: Foreign key to the marketing channel attributed to the order.
+      - name: gross_revenue_amount
+        description: Order-level gross revenue in USD before refunds.
+      - name: total_refund_amount
+        description: Total refunds applied to the order in USD; zero when no refund.
+      - name: is_revenue_eligible
+        description: True when order is not Cancelled or fully Refunded.
+      - name: is_fully_refunded
+        description: True when order_status is Refunded.
+      - name: is_cancelled
+        description: True when order_status is Cancelled.
+      - name: has_partial_refund
+        description: True for Completed orders with a positive refund amount.
+      - name: net_order_revenue
+        description: >
+          Governed order net revenue: gross_revenue_amount minus total_refund_amount
+          when revenue-eligible, otherwise zero.
+      - name: order_month
+        description: Month truncation of ordered_at for monthly executive rollups (BQ1).
+
+  - name: int_order_items__enriched
+    description: >
+      Order line items denormalized with product, category, and order-level refund
+      context. Allocates partial refunds proportionally by line share of order line
+      revenue for category-level net revenue (BQ3). Inherits is_revenue_eligible from
+      the parent order.
+    columns:
+      - name: order_item_id
+        description: Surrogate primary key for the order line item.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Foreign key to the parent order header.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_orders__with_refunds')
+                field: order_id
+      - name: product_id
+        description: Foreign key to the product sold on this line.
+        data_tests:
+          - not_null
+      - name: category_id
+        description: Foreign key to the product's merchandising category.
+        data_tests:
+          - not_null
+      - name: line_revenue_amount
+        description: Extended line revenue in USD before refund allocation.
+      - name: allocated_refund_amount
+        description: >
+          Portion of order total_refund_amount allocated to this line by line revenue
+          share; zero when the order is not revenue-eligible.
+      - name: net_line_revenue
+        description: >
+          Line revenue net of proportional refund allocation for revenue-eligible orders.
+      - name: is_revenue_eligible
+        description: Inherited from parent order; gates inclusion in revenue KPIs.
+      - name: has_valid_order_id
+        description: True when the line item joins to a valid order (0 orphan FKs in source).
+      - name: has_valid_product_id
+        description: True when the line item joins to a valid product (0 orphan FKs in source).
+      - name: has_valid_category_id
+        description: True when the product joins to a valid category (0 orphan FKs in source).
+
+  - name: int_customers__lifetime_metrics
+    description: >
+      Customer dimension enriched with lifetime purchase metrics from governed order
+      net revenue. Supports BQ2 top-customer ranking via lifetime_net_spend.
+    columns:
+      - name: customer_id
+        description: Surrogate primary key for the customer.
+        data_tests:
+          - unique
+          - not_null
+      - name: lifetime_net_spend
+        description: >
+          Sum of net_order_revenue across all orders for the customer; ineligible
+          orders contribute zero via upstream logic.
+      - name: lifetime_order_count
+        description: Count of revenue-eligible orders placed by the customer.
+      - name: first_order_at
+        description: Timestamp of the customer's earliest order.
+      - name: last_order_at
+        description: Timestamp of the customer's most recent order.
+      - name: has_valid_customer_id
+        description: True when customer attributes join to order metrics (all customers retained).
