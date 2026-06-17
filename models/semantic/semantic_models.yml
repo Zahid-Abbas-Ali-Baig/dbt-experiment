@@ -1,0 +1,225 @@
+semantic_models:
+  - name: fct_orders
+    description: >
+      Order-header fact at one row per order. Governed net revenue excludes cancelled
+      and fully refunded orders; partial refunds reduce net_order_revenue on completed orders.
+    model: ref('fct_orders')
+    defaults:
+      agg_time_dimension: ordered_at
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+      - name: channel
+        type: foreign
+        expr: channel_id
+    dimensions:
+      - name: ordered_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: order_month
+        type: time
+        type_params:
+          time_granularity: month
+      - name: order_status
+        type: categorical
+      - name: is_revenue_eligible
+        type: categorical
+    measures:
+      - name: net_order_revenue
+        description: Governed order net revenue after refunds for eligible orders.
+        agg: sum
+        expr: net_order_revenue
+      - name: gross_revenue_amount
+        description: Order-level gross revenue before refunds.
+        agg: sum
+        expr: gross_revenue_amount
+      - name: total_refund_amount
+        description: Total refunds applied to the order in USD.
+        agg: sum
+        expr: total_refund_amount
+      - name: order_count
+        description: Distinct count of orders.
+        agg: count_distinct
+        expr: order_id
+
+  - name: fct_order_items
+    description: >
+      Order line-item fact at one row per product line. Net line revenue allocates
+      partial refunds proportionally by line share for category-level rollups (BQ3).
+    model: ref('fct_order_items')
+    defaults:
+      agg_time_dimension: ordered_at
+    entities:
+      - name: order_item
+        type: primary
+        expr: order_item_id
+      - name: order
+        type: foreign
+        expr: order_id
+      - name: product
+        type: foreign
+        expr: product_id
+      - name: category
+        type: foreign
+        expr: category_id
+    dimensions:
+      - name: ordered_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: is_revenue_eligible
+        type: categorical
+    measures:
+      - name: net_line_revenue
+        description: Line revenue after proportional refund allocation.
+        agg: sum
+        expr: net_line_revenue
+      - name: quantity
+        description: Units sold on the order line.
+        agg: sum
+        expr: quantity
+
+  - name: dim_customers
+    description: >
+      Customer dimension with lifetime spend and segmentation attributes for BQ2
+      top-customer analysis. Joins to fct_orders on the customer entity.
+    model: ref('dim_customers')
+    entities:
+      - name: customer
+        type: primary
+        expr: customer_id
+    dimensions:
+      - name: name
+        type: categorical
+      - name: email
+        type: categorical
+      - name: country
+        type: categorical
+      - name: city
+        type: categorical
+      - name: customer_signup_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: customer_segment
+        type: categorical
+      - name: lifetime_value_segment
+        type: categorical
+
+  - name: dim_products
+    description: Product catalog dimension. Joins to fct_order_items on the product entity.
+    model: ref('dim_products')
+    entities:
+      - name: product
+        type: primary
+        expr: product_id
+    dimensions:
+      - name: sku
+        type: categorical
+      - name: product_name
+        type: categorical
+      - name: is_product_active
+        type: categorical
+
+  - name: dim_categories
+    description: Product category dimension. Joins to fct_order_items on the category entity.
+    model: ref('dim_categories')
+    entities:
+      - name: category
+        type: primary
+        expr: category_id
+    dimensions:
+      - name: category_name
+        type: categorical
+
+  - name: dim_marketing_channels
+    description: Marketing acquisition channel dimension. Joins to fct_orders on the channel entity.
+    model: ref('dim_marketing_channels')
+    entities:
+      - name: channel
+        type: primary
+        expr: channel_id
+    dimensions:
+      - name: marketing_channel_name
+        type: categorical
+
+metrics:
+  - name: monthly_net_revenue
+    description: >
+      Total governed net revenue by month. Excludes cancelled and fully refunded orders;
+      subtracts partial refunds on completed orders. Answers BQ1.
+    type: simple
+    label: Monthly Net Revenue
+    type_params:
+      measure: net_order_revenue
+    filter: |
+      {{ Dimension('fct_orders__is_revenue_eligible') }} = true
+
+  - name: monthly_order_count
+    description: >
+      Count of revenue-eligible orders by month. Excludes cancelled and fully refunded
+      orders. Answers BQ1.
+    type: simple
+    label: Monthly Order Count
+    type_params:
+      measure: order_count
+    filter: |
+      {{ Dimension('fct_orders__is_revenue_eligible') }} = true
+
+  - name: gross_revenue
+    description: >
+      Sum of gross order revenue before refunds for revenue-eligible orders. Supporting
+      metric for revenue reconciliation.
+    type: simple
+    label: Gross Revenue
+    type_params:
+      measure: gross_revenue_amount
+    filter: |
+      {{ Dimension('fct_orders__is_revenue_eligible') }} = true
+
+  - name: total_refunds
+    description: >
+      Total refund dollars across all orders regardless of eligibility status.
+      Supporting metric for refund monitoring.
+    type: simple
+    label: Total Refunds
+    type_params:
+      measure: total_refund_amount
+
+  - name: customer_lifetime_net_spend
+    description: >
+      Sum of governed net order revenue per customer across all eligible orders.
+      Use with customer dimensions from dim_customers. Answers BQ2.
+    type: simple
+    label: Customer Lifetime Net Spend
+    type_params:
+      measure: net_order_revenue
+    filter: |
+      {{ Dimension('fct_orders__is_revenue_eligible') }} = true
+
+  - name: category_net_line_revenue
+    description: >
+      Net line revenue by product category after proportional refund allocation.
+      Group by category_name from dim_categories. Answers BQ3.
+    type: simple
+    label: Category Net Line Revenue
+    type_params:
+      measure: net_line_revenue
+    filter: |
+      {{ Dimension('fct_order_items__is_revenue_eligible') }} = true
+
+  - name: units_sold
+    description: >
+      Total units sold on revenue-eligible order lines. Group by category_name or
+      product_name via dimension joins. Supporting product performance metric.
+    type: simple
+    label: Units Sold
+    type_params:
+      measure: quantity
+    filter: |
+      {{ Dimension('fct_order_items__is_revenue_eligible') }} = true

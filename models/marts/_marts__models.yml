@@ -1,0 +1,194 @@
+version: 2
+
+models:
+  - name: time_spine_daily
+    description: >
+      MetricFlow time spine with one row per calendar day (2024-01-01 through 2027-12-31).
+      Required for time-based semantic layer metrics such as monthly_net_revenue.
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: Base date column for daily time granularity.
+        granularity: day
+
+  - name: fct_orders
+    description: >
+      Order-header fact mart at one row per order. Primary source for BQ1 monthly
+      revenue and order-count rollups. Net revenue follows governed definitions from
+      int_orders__with_refunds: excludes cancelled and fully refunded orders and
+      subtracts partial refunds on completed orders.
+    columns:
+      - name: order_id
+        description: Surrogate primary key for the order; grain of this fact table.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Foreign key to dim_customers for customer-level analysis (BQ2).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: channel_id
+        description: Foreign key to dim_marketing_channels for acquisition analysis.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_marketing_channels')
+                field: channel_id
+      - name: ordered_at
+        description: Timestamp when the order was placed; semantic time dimension (day grain).
+      - name: order_month
+        description: Month truncation of ordered_at for executive monthly rollups (BQ1).
+      - name: order_status
+        description: Canonical order lifecycle status (Completed, Cancelled, Refunded).
+      - name: gross_revenue_amount
+        description: Order-level gross revenue in USD before refunds.
+      - name: total_refund_amount
+        description: Total refunds applied to the order in USD.
+      - name: net_order_revenue
+        description: >
+          Governed net revenue for KPIs: gross minus refunds when revenue-eligible,
+          else zero. Semantic measure for monthly_net_revenue and customer_lifetime_net_spend.
+      - name: is_revenue_eligible
+        description: >
+          True when order is not Cancelled or fully Refunded. Semantic filter for
+          all revenue KPIs per requirements.
+
+  - name: fct_order_items
+    description: >
+      Order line-item fact mart at one row per product line. Primary source for BQ3
+      category revenue drivers. Net line revenue allocates partial refunds proportionally
+      by line share of order line revenue.
+    columns:
+      - name: order_item_id
+        description: Surrogate primary key for the order line item; grain of this fact table.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: Foreign key to fct_orders for order-level context and eligibility.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_orders')
+                field: order_id
+      - name: product_id
+        description: Foreign key to dim_products for product-level analysis.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: category_id
+        description: Foreign key to dim_categories for category rollups (BQ3).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_categories')
+                field: category_id
+      - name: ordered_at
+        description: Order placement timestamp from parent order; semantic time dimension.
+      - name: quantity
+        description: Units ordered on the line. Semantic measure for units_sold.
+      - name: line_revenue_amount
+        description: Gross line revenue before refund allocation.
+      - name: allocated_refund_amount
+        description: Proportional share of order refunds allocated to this line.
+      - name: net_line_revenue
+        description: >
+          Governed line net revenue after refund allocation. Semantic measure for
+          category_net_line_revenue.
+      - name: is_revenue_eligible
+        description: Inherited from parent order; false for cancelled or fully refunded orders.
+
+  - name: dim_customers
+    description: >
+      Customer dimension with lifetime spend metrics and value segmentation for BQ2
+      top-customer analysis. Joins to fct_orders on customer_id.
+    columns:
+      - name: customer_id
+        description: Surrogate primary key for the customer; grain of this dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: name
+        description: Customer full name (PII).
+      - name: email
+        description: Customer email address (PII).
+      - name: country
+        description: Customer country for geographic segmentation.
+      - name: city
+        description: Customer city for geographic segmentation.
+      - name: customer_signup_date
+        description: Date the customer registered.
+      - name: customer_segment
+        description: Business segment (Retail, VIP).
+      - name: lifetime_net_spend
+        description: >
+          Pre-computed sum of net_order_revenue across eligible orders. Supports BQ2
+          ranking; semantic metric customer_lifetime_net_spend uses fct_orders join.
+      - name: lifetime_order_count
+        description: Count of revenue-eligible orders placed by the customer.
+      - name: lifetime_value_segment
+        description: Derived tier based on lifetime spend percentile (Top 10%, Top 25%, Standard).
+
+  - name: dim_products
+    description: >
+      Product catalog dimension with category linkage. Joins to fct_order_items on
+      product_id for product and category performance analysis (BQ3).
+    columns:
+      - name: product_id
+        description: Surrogate primary key for the product; grain of this dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: sku
+        description: Stock-keeping unit identifier.
+      - name: product_name
+        description: Display name of the product. Semantic dimension for units_sold.
+      - name: category_id
+        description: Foreign key to dim_categories.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_categories')
+                field: category_id
+      - name: unit_price
+        description: Current catalog list price in USD.
+      - name: is_product_active
+        description: Whether the product is active in the catalog.
+
+  - name: dim_categories
+    description: >
+      Product category dimension for category revenue rollups (BQ3). Joins to
+      fct_order_items on category_id.
+    columns:
+      - name: category_id
+        description: Surrogate primary key for the category; grain of this dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: category_name
+        description: Display name of the category. Semantic dimension for category_net_line_revenue.
+
+  - name: dim_marketing_channels
+    description: >
+      Marketing acquisition channel lookup. Joins to fct_orders on channel_id for
+      channel attribution analysis.
+    columns:
+      - name: channel_id
+        description: Surrogate primary key for the channel; grain of this dimension.
+        data_tests:
+          - unique
+          - not_null
+      - name: marketing_channel_name
+        description: Display name of the acquisition channel (Google Ads, Organic, etc.).
