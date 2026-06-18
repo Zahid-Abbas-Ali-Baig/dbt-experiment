@@ -1,0 +1,47 @@
+# ShopSphere Power BI report — build visuals per page
+
+Open `shopsphere.pbix`, then run `python powerbi/setup_all.py` (model measures only).
+Optionally run `python powerbi/inject_report.py powerbi/shopsphere.pbix` for empty named pages.
+
+Use measures from `_KPI Measures` (not raw column sums).
+
+## Page 1 — Executive Dashboard
+- Cards: Net Revenue, Order Count, Avg Order Value, Customer Count, Refund Rate %
+- Line chart: Net Revenue by order_month
+- Column chart: Order Count by month
+- Donut: Net Revenue by marketing_channel_name
+
+## Page 2 — Geographic Performance (maps)
+- Filled map: Location=country, Values=Net Revenue
+- Filled map: Location=country, Values=Customer Count
+- Bubble map: Location=city + country, Size=Net Revenue
+- Bar chart: country x Net Revenue + Customer Count
+
+## Page 3 — Customer Intelligence
+- Bar Top 10: name x Customer Lifetime Net Spend
+- Donut: customer_segment x Net Revenue
+- Treemap: lifetime_value_segment x Customer Lifetime Net Spend
+- Scatter: lifetime_order_count vs lifetime_net_spend
+
+## Page 4 — Products and Categories
+- Bar: category_name x Category Net Revenue
+- Bar: category_name x Units Sold
+- Table: product_name, category_name, Category Net Revenue, Units Sold
+
+## Page 5 — Marketing and Acquisition
+- Bar: marketing_channel_name x Net Revenue
+- Bar: marketing_channel_name x Avg Order Value
+- 100% stacked column: month x channel x Order Count
+
+## Page 6 — Revenue and Refunds
+- Clustered bar: month x Gross Revenue, Total Refunds, Net Revenue
+- Line: Gross Revenue vs Net Revenue by month
+- Donut: order_status x Net Revenue
+
+## Page 7 — Order Operations
+- Donut: order_status x Order Count
+- Cards: Refund Rate %, Units per Order
+- Line: Refund Rate % by month
+
+## Page 8 — Semantic Model Health
+- KPI cards + table: country, city, Net Revenue, Customer Count

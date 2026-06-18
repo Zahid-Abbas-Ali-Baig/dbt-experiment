@@ -1,0 +1,119 @@
+{
+  "id": 0,
+  "resourcePackages": [
+    {
+      "resourcePackage": {
+        "name": "SharedResources",
+        "type": 2,
+        "items": [
+          {
+            "type": 202,
+            "path": "BaseThemes/CY25SU12.json",
+            "name": "CY25SU12"
+          }
+        ],
+        "disabled": false
+      }
+    }
+  ],
+  "sections": [
+    {
+      "id": 0,
+      "name": "b011364ffd72a507ce08",
+      "displayName": "Executive Dashboard",
+      "filters": "[]",
+      "ordinal": 0,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 1,
+      "name": "f8779dac36f580453eb9",
+      "displayName": "Geographic Performance",
+      "filters": "[]",
+      "ordinal": 1,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 2,
+      "name": "5ceed1dabe3e71aec99d",
+      "displayName": "Customer Intelligence",
+      "filters": "[]",
+      "ordinal": 2,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 3,
+      "name": "3a2fae444bd844feebcc",
+      "displayName": "Products and Categories",
+      "filters": "[]",
+      "ordinal": 3,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 4,
+      "name": "115476e52d49a79ee0ba",
+      "displayName": "Marketing and Acquisition",
+      "filters": "[]",
+      "ordinal": 4,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 5,
+      "name": "fd311e8e860dcaa6c262",
+      "displayName": "Revenue and Refunds",
+      "filters": "[]",
+      "ordinal": 5,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 6,
+      "name": "85ec7cad6d42340eae01",
+      "displayName": "Order Operations",
+      "filters": "[]",
+      "ordinal": 6,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": 7,
+      "name": "bfda4210be3d1bbfeb9f",
+      "displayName": "Semantic Model Health",
+      "filters": "[]",
+      "ordinal": 7,
+      "visualContainers": [],
+      "config": "{}",
+      "displayOption": 1,
+      "width": 1280,
+      "height": 720
+    }
+  ],
+  "config": "{\"version\":\"5.69\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY25SU12\",\"version\":{\"visual\":\"2.5.0\",\"report\":\"3.1.0\",\"page\":\"2.3.0\"},\"type\":2}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"queryLimitOption\":6,\"useEnhancedTooltips\":true,\"exportDataMode\":1,\"useDefaultAggregateDisplayName\":true},\"objects\":{\"section\":[{\"properties\":{\"verticalAlignment\":{\"expr\":{\"Literal\":{\"Value\":\"'Top'\"}}}}}]}}",
+  "layoutOptimization": 0
+}
